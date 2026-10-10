@@ -98,7 +98,20 @@ function loadEnvFile(file) {
   let content;
   try {
     content = fs.readFileSync(file, 'utf8');
-  } catch {
+  } catch (err) {
+    // 「檔案不存在」是正常的（可改用真正的環境變數）；但「存在卻讀不到」
+    // 幾乎一定是權限問題，後果很嚴重（DATA_DIR 會落回預設值），必須出聲。
+    if (err.code === 'EACCES' || err.code === 'EPERM') {
+      console.error('');
+      console.error(`[imgdrop] 讀不到設定檔：${file}`);
+      console.error(`  錯誤：${err.message}`);
+      console.error('  這幾乎都是擁有者不對（例如被 chown -R root:root 改成 root:root）。');
+      console.error('  修復：');
+      console.error(`    sudo chown root:imgdrop ${file} && sudo chmod 640 ${file}`);
+      console.error('    sudo systemctl restart imgdrop');
+      console.error('  ⚠ 目前所有設定都會落回預設值，包含 DATA_DIR！');
+      console.error('');
+    }
     return duplicates;
   }
 
@@ -199,8 +212,16 @@ function failDataDir(what, err) {
   console.error('  例如曾用 sudo 執行 sqlite3 讀取資料庫，會產生 root 擁有的');
   console.error('  imgdrop.db-wal / imgdrop.db-shm，之後服務（以 imgdrop 身分執行）就寫不進去。');
   console.error('');
+  if (process.env.DATA_DIR === undefined) {
+    console.error('  ⚠ 環境變數 DATA_DIR 沒有被設定，目前用的是預設路徑。');
+    console.error('    若你設定了 .env，請確認服務使用者讀得到：');
+    console.error(`      ls -la ${path.join(__dirname, '.env')}`);
+    console.error('    讀不到 .env 會讓所有設定落回預設值 —— 這正是常見的崩潰原因。');
+    console.error('');
+  }
   console.error('  修復方式：');
   console.error(`    sudo chown -R imgdrop:imgdrop ${DATA_DIR}`);
+  console.error(`    sudo chown root:imgdrop ${path.join(__dirname, '.env')} && sudo chmod 640 ${path.join(__dirname, '.env')}`);
   console.error('    sudo systemctl restart imgdrop');
   console.error('');
   console.error(`  目前目錄狀態（可供診斷）：`);

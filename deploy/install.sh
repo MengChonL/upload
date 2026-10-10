@@ -145,10 +145,16 @@ MAX_UPLOADS_PER_HOUR=120
 TRUST_PROXY=false
 LOG_REQUESTS=false
 EOF
-  chown "root:${SVC_USER}" "$APP_DIR/.env"
-  chmod 640 "$APP_DIR/.env"
   ok "已產生 $APP_DIR/.env"
 fi
+
+# 關鍵：上面的 "chown -R root:root $APP_DIR" 會把 .env 一起改成 root:root，
+# 而服務是以 imgdrop 身分執行 —— 讀不到 .env 會讓所有設定（含 DATA_DIR）
+# 落回預設值 /opt/imgdrop/data，在 ProtectSystem=strict 下不可寫而崩潰。
+# 所以不論 .env 是新建或沿用，這裡都要把權限修回來。
+chown "root:${SVC_USER}" "$APP_DIR/.env"
+chmod 640 "$APP_DIR/.env"
+ok "已設定 $APP_DIR/.env 權限（root:${SVC_USER} 640）"
 
 # ---------------------------------------------------------------- systemd
 log "安裝 systemd 服務"
