@@ -183,10 +183,56 @@ function randomId(length = ID_LENGTH) {
   return out;
 }
 
+/**
+ * 資料目錄有問題時，給出看得懂、可以直接照著做的指示，
+ * 而不是讓 SQLITE_CANTOPEN / EACCES 這種例外裸奔到使用者面前。
+ */
+function failDataDir(what, err) {
+  const uid = typeof process.getuid === 'function' ? process.getuid() : '?';
+  const gid = typeof process.getgid === 'function' ? process.getgid() : '?';
+  console.error('');
+  console.error(`[imgdrop] ${what}：${DATA_DIR}`);
+  console.error(`  錯誤：${err.code || ''} ${err.message}`);
+  console.error(`  目前執行身分：uid=${uid} gid=${gid}`);
+  console.error('');
+  console.error('  最常見原因：目錄或其中的檔案被 root 佔有。');
+  console.error('  例如曾用 sudo 執行 sqlite3 讀取資料庫，會產生 root 擁有的');
+  console.error('  imgdrop.db-wal / imgdrop.db-shm，之後服務（以 imgdrop 身分執行）就寫不進去。');
+  console.error('');
+  console.error('  修復方式：');
+  console.error(`    sudo chown -R imgdrop:imgdrop ${DATA_DIR}`);
+  console.error('    sudo systemctl restart imgdrop');
+  console.error('');
+  console.error(`  目前目錄狀態（可供診斷）：`);
+  try {
+    for (const line of fs.readdirSync(DATA_DIR)) {
+      const st = fs.statSync(path.join(DATA_DIR, line));
+      console.error(`    ${st.uid}:${st.gid} ${(st.mode & 0o777).toString(8)} ${line}`);
+    }
+  } catch {
+    console.error('    （無法列出目錄內容）');
+  }
+  console.error('');
+  process.exit(1);
+}
+
 // ---- 資料目錄：必須在任何讀寫之前建立好 ----
 // （沒有這段的話，DATA_DIR 不存在時 secret.key 會寫入失敗並以 ENOENT 崩潰）
 for (const dir of [DATA_DIR, FILES_DIR, THUMBS_DIR, TMP_DIR]) {
-  fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
+  try {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
+  } catch (err) {
+    failDataDir('資料目錄無法建立或存取', err);
+  }
+}
+
+// ---- 可寫性預檢：把權限問題提早變成一句可行動的指示 ----
+try {
+  const probe = path.join(DATA_DIR, '.write-probe');
+  fs.writeFileSync(probe, String(process.pid));
+  fs.unlinkSync(probe);
+} catch (err) {
+  failDataDir('資料目錄無法寫入', err);
 }
 
 // ---- 伺服器密鑰（用於雜湊刪除碼／裝置權杖，避免資料庫外洩即可反推）----
@@ -233,7 +279,20 @@ try {
   process.exit(1);
 }
 
-const db = new DatabaseSync(DB_FILE);
+let db;
+try {
+  db = new DatabaseSync(DB_FILE);
+} catch (err) {
+  console.error('');
+  console.error(`[imgdrop] 無法開啟資料庫：${DB_FILE}`);
+  console.error(`  錯誤：${err.message}`);
+  console.error('');
+  console.error('  若是權限問題（SQLITE_CANTOPEN / EACCES），試試：');
+  console.error(`    sudo chown -R imgdrop:imgdrop ${DATA_DIR}`);
+  console.error('    sudo systemctl restart imgdrop');
+  console.error('');
+  process.exit(1);
+}
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA synchronous = NORMAL;

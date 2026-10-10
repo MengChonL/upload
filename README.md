@@ -239,7 +239,10 @@ curl -H "X-Admin-Key: $(sudo grep '^ADMIN_KEY=' /opt/imgdrop/.env | cut -d= -f2)
 curl -X POST -H "X-Admin-Key: ..." http://127.0.0.1:3000/api/admin/cleanup
 
 # 看資料庫裡有什麼
-sudo sqlite3 /var/lib/imgdrop/imgdrop.db \
+# ⚠️ 一定要用 -readonly 並以 imgdrop 身分執行。
+#    用 sudo 直接開會產生 root 擁有的 imgdrop.db-wal / -shm，
+#    之後服務（以 imgdrop 身分跑）就無法寫入而崩潰。
+sudo -u imgdrop sqlite3 -readonly /var/lib/imgdrop/imgdrop.db \
   "SELECT id, mime, size/1024||'KB', datetime(created_at/1000,'unixepoch','localtime'),
           datetime(expires_at/1000,'unixepoch','localtime') FROM photos ORDER BY created_at DESC LIMIT 20;"
 
