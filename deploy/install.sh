@@ -75,6 +75,10 @@ else
     warn "nvm／家目錄的 Node 無法被 systemd 服務使用（且 /root 會被 ProtectHome 遮蔽）"
   else
     warn "找不到夠新的 Node.js（需要 ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}+，Ubuntu 內建只有 18）"
+    if [ -n "${SUDO_USER:-}" ]; then
+      warn "（sudo 會重置 PATH，所以 nvm 安裝的 node 在這裡看不到 —— 這是正常的："
+      warn "  systemd 服務同樣看不到 nvm，本來就需要一份系統版 Node）"
+    fi
   fi
   warn "→ 將另外安裝系統版 Node.js ${NODE_SETUP}.x（不影響你原有的 nvm）"
   install_system_node
@@ -169,7 +173,23 @@ fi
 
 # ---------------------------------------------------------------- 完成
 PORT_USED="$(grep -E '^PORT=' "$APP_DIR/.env" | cut -d= -f2 || echo 3000)"
-IP_ADDR="$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')"
+
+# 偵測對外 IP：優先用阿里雲 ECS 元資料服務（內網直達、最準），
+# 絕不能只用 hostname -I，那會拿到內網 IP 害使用者打不開。
+detect_public_ip() {
+  local ip="" priv=""
+  ip="$(curl -fsS --max-time 2 http://100.100.100.200/latest/meta-data/eipv4 2>/dev/null || true)"
+  [ -n "$ip" ] || ip="$(curl -fsS --max-time 2 http://100.100.100.200/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  [ -n "$ip" ] || ip="$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null || true)"
+  if printf '%s' "$ip" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '%s' "$ip"
+    return 0
+  fi
+  priv="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  printf '%s' "${priv:-你的公網IP}（這是內網 IP！請改用控制台顯示的公網 IP）"
+  return 1
+}
+IP_ADDR="$(detect_public_ip || true)"
 
 cat <<EOF
 
