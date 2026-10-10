@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="format-detection" content="telephone=no">
+<title>圖片上傳</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">▣</span>
+    <h1 id="siteName">圖片上傳</h1>
+  </div>
+  <div class="health" id="health" title="伺服器狀態"></div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab is-active" data-tab="upload" role="tab" type="button">上傳</button>
+  <button class="tab" data-tab="mine" role="tab" type="button">我的上傳</button>
+  <button class="tab" data-tab="all" role="tab" type="button" hidden>全部照片</button>
+</nav>
+
+<main>
+
+  <!-- ================= 上傳 ================= -->
+  <section class="panel is-active" id="panel-upload">
+
+    <details class="card settings" open>
+      <summary>上傳設定</summary>
+
+      <label class="field">
+        <span class="field-label">上傳碼 <em>必填</em></span>
+        <span class="input-wrap">
+          <input id="uploadCode" type="password" autocomplete="off" autocapitalize="characters"
+                 spellcheck="false" placeholder="向管理員索取">
+          <button type="button" class="ghost" id="toggleCode">顯示</button>
+        </span>
+      </label>
+
+      <label class="field">
+        <span class="field-label">保存時間</span>
+        <select id="expire"></select>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="compress" checked>
+        <span>上傳前先壓縮 <small>（建議：手機網絡快很多）</small></span>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="remember" checked>
+        <span>在這台裝置記住上傳碼</span>
+      </label>
+    </details>
+
+    <div class="dropzone" id="dropzone">
+      <div class="dz-icon" aria-hidden="true">＋</div>
+      <p class="dz-title">拖放圖片到這裡</p>
+      <div class="dz-actions">
+        <button type="button" class="primary" id="pickBtn">選擇圖片</button>
+        <button type="button" class="secondary" id="cameraBtn">拍照</button>
+      </div>
+      <p class="hint" id="limitHint"></p>
+      <input id="fileInput" type="file" accept="image/*" multiple hidden>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+    </div>
+
+    <div class="queue-head" id="queueHead" hidden>
+      <h2>上傳進度</h2>
+      <button type="button" class="ghost" id="clearDone">清除已完成</button>
+    </div>
+    <ul class="queue" id="queue"></ul>
+
+    <div class="card tips">
+      <h2>使用提示</h2>
+      <ul>
+        <li>上傳後會顯示一組 <b>刪除碼</b>，請立即截圖或複製保存。</li>
+        <li>伺服器只保存刪除碼的雜湊值，<b>遺失後無法找回</b>；但你仍可在「我的上傳」用同一部手機刪除。</li>
+        <li>圖片到期會自動從伺服器刪除，無需手動清理。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= 我的上傳 ================= -->
+  <section class="panel" id="panel-mine">
+    <div class="panel-head">
+      <h2>我的上傳</h2>
+      <button type="button" class="ghost" id="reloadMine">重新載入</button>
+    </div>
+    <p class="empty" id="mineEmpty">還沒有上傳紀錄。<br><small>此清單綁定這部裝置的瀏覽器，換手機或清除瀏覽資料後就看不到。</small></p>
+    <div class="grid" id="mineGrid"></div>
+    <div class="more-wrap"><button type="button" class="secondary" id="mineMore" hidden>載入更多</button></div>
+  </section>
+
+  <!-- ================= 全部照片 ================= -->
+  <section class="panel" id="panel-all">
+    <div class="panel-head">
+      <h2>全部照片</h2>
+      <button type="button" class="ghost" id="reloadAll">重新載入</button>
+    </div>
+    <p class="empty" id="allEmpty">暫時沒有照片。</p>
+    <div class="grid" id="allGrid"></div>
+    <div class="more-wrap"><button type="button" class="secondary" id="allMore" hidden>載入更多</button></div>
+  </section>
+
+</main>
+
+<!-- ================= 大圖檢視 ================= -->
+<div class="lightbox" id="lightbox" hidden>
+  <div class="lb-bar">
+    <span class="lb-meta" id="lbMeta"></span>
+    <button type="button" class="ghost light" id="lbClose" aria-label="關閉">✕</button>
+  </div>
+  <div class="lb-stage" id="lbStage">
+    <div class="spinner" id="lbSpinner"></div>
+    <img id="lbImg" alt="">
+  </div>
+  <div class="lb-actions">
+    <a class="secondary" id="lbDownload" download>下載</a>
+    <button type="button" class="danger" id="lbDelete">刪除這張</button>
+  </div>
+</div>
+
+<!-- ================= 刪除對話框 ================= -->
+<dialog id="deleteDialog" class="dialog">
+  <form method="dialog">
+    <h3>刪除圖片</h3>
+    <p class="dialog-sub" id="dlgSub">輸入該圖片的刪除碼以確認刪除。</p>
+    <label class="field">
+      <span class="field-label">刪除碼</span>
+      <input id="dlgCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="例如 7F3K-9QMB">
+    </label>
+    <p class="dialog-err" id="dlgErr" hidden></p>
+    <div class="dialog-actions">
+      <button type="button" class="secondary" id="dlgCancel">取消</button>
+      <button type="button" class="danger" id="dlgConfirm">確認刪除</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

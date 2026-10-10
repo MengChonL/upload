@@ -1,0 +1,39 @@
+# Caddy 設定範例：自動申請與續期 HTTPS 憑證
+#
+# 安裝：sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+#       curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+#       curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+#       sudo apt update && sudo apt install -y caddy
+#
+# 然後把這個檔案覆蓋到 /etc/caddy/Caddyfile，改成你的網域，再 sudo systemctl reload caddy
+#
+# 注意：如果 .env 用了反向代理，記得把 TRUST_PROXY 改成 true。
+
+photos.example.com {
+	encode zstd gzip
+
+	# 上傳大小上限（要比 .env 的 MAX_FILE_BYTES 大一點）
+	request_body {
+		max_size 25MB
+	}
+
+	reverse_proxy 127.0.0.1:3000 {
+		# 上傳大檔時不要中途斷線
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/imgdrop.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}

@@ -1,0 +1,15 @@
+{
+  "name": "imgdrop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "極簡手機圖片上傳伺服器：上傳碼 + 刪除碼 + 自動過期，零 npm 依賴",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "smoke": "node --disable-warning=ExperimentalWarning test/smoke.js"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "license": "MIT"
+}

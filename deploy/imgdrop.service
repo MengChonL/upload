@@ -1,0 +1,41 @@
+[Unit]
+Description=imgdrop 圖片上傳服務
+Documentation=file:///opt/imgdrop/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=imgdrop
+Group=imgdrop
+WorkingDirectory=/opt/imgdrop
+Environment=NODE_ENV=production
+# 程式自己會讀取 /opt/imgdrop/.env，這裡不需要 EnvironmentFile。
+# 若你想改用 systemd 管理環境變數，可取消下一行註解（注意 systemd 的格式較嚴格）：
+# EnvironmentFile=/opt/imgdrop/.env
+ExecStart=/usr/bin/env node --disable-warning=ExperimentalWarning /opt/imgdrop/server.js
+Restart=always
+RestartSec=3
+SyslogIdentifier=imgdrop
+StandardOutput=journal
+StandardError=journal
+
+# ---- 加固：即使程式被入侵也難以擴大破壞 ----
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+ReadWritePaths=/var/lib/imgdrop
+# 2 GB 記憶體的機器，限制一下避免失控
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target
