@@ -22,7 +22,7 @@ const { once } = require('node:events');
 // 1. 設定
 // =====================================================================
 
-loadEnvFile(path.join(__dirname, '.env'));
+const ENV_DUPLICATES = loadEnvFile(path.join(__dirname, '.env'));
 
 const ROOT = __dirname;
 const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, 'data');
@@ -86,16 +86,28 @@ function boolEnv(name, fallback) {
   return /^(1|true|yes|on)$/i.test(raw.trim());
 }
 
+/**
+ * 讀取 .env。
+ *
+ * 規則：同一個鍵重複出現時，**第一次出現的勝出**（與「已存在的環境變數不被覆蓋」
+ * 一致）。重複的鍵會被收集起來，啟動時大聲警告 —— 因為重複的鍵幾乎都是
+ * 手動編輯留下來的，而且往往是安全相關的設定（例如 PUBLIC_GALLERY）。
+ */
 function loadEnvFile(file) {
+  const duplicates = [];
   let content;
   try {
     content = fs.readFileSync(file, 'utf8');
   } catch {
-    return;
+    return duplicates;
   }
+
+  const seen = new Map(); // key -> { values: string[], used: string|null }
+
   for (const line of content.split(/\r?\n/)) {
     const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;
+    const key = m[1];
     let value = m[2].trim();
     if (
       (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
@@ -103,8 +115,24 @@ function loadEnvFile(file) {
     ) {
       value = value.slice(1, -1);
     }
-    if (process.env[m[1]] === undefined) process.env[m[1]] = value;
+
+    const entry = seen.get(key) || { values: [], used: null };
+    entry.values.push(value);
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+      entry.used = value;
+    } else if (entry.used === null) {
+      entry.used = '(由環境變數覆蓋，.env 的值未採用)';
+    }
+    seen.set(key, entry);
   }
+
+  for (const [key, entry] of seen) {
+    if (entry.values.length > 1) {
+      duplicates.push({ key, values: entry.values, used: entry.used });
+    }
+  }
+  return duplicates;
 }
 
 /** 上傳碼正規化：去空白、轉大寫（手機鍵盤常自動首字大寫）。 */
@@ -1043,6 +1071,17 @@ async function start() {
   setInterval(() => {
     cleanupExpired(200).catch((e) => console.warn('[imgdrop] 清理失敗', e.message));
   }, CLEANUP_INTERVAL_MS).unref();
+
+  if (ENV_DUPLICATES.length) {
+    console.warn('');
+    console.warn('  \u26a0\uFE0F  .env 有重複的設定鍵 —— 這幾乎都是手動編輯留下來的，請清理：');
+    for (const d of ENV_DUPLICATES) {
+      console.warn(`     ${d.key} 出現了 ${d.values.length} 次：${d.values.map((v) => JSON.stringify(v)).join(' / ')}`);
+      console.warn(`     目前採用：${JSON.stringify(d.used)}  （規則：第一次出現的勝出）`);
+    }
+    console.warn('     建議把重複的行刪掉，只留一行，避免日後誤判。');
+    console.warn('');
+  }
 
   server.listen(PORT, HOST, () => {
     const { count, bytes } = storageUsage();
