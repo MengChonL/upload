@@ -469,6 +469,52 @@ imgdrop/
 
 ---
 
+## 流量監控與異常偵測
+
+想知道「有沒有奇怪的流量或機器人」，用內建的報告工具：
+
+```bash
+# 先開啟 ufw 記錄（才能看到被封鎖的來源）
+sudo ufw logging on
+
+# 產生報告（唯讀，不改任何設定）
+sudo bash /opt/imgdrop/deploy/traffic-report.sh
+```
+
+報告包含六個部分：
+
+| 區段 | 看什麼 |
+|---|---|
+| 1. 服務與目前連線 | 誰正在連你的 3000 / 80 埠 |
+| 2. **ufw 封鎖紀錄** | **被封鎖的來源 IP 與目標埠——最直接看到機器人的地方** |
+| 3. nginx 存取日誌 | 來源 IP、熱門路徑、狀態碼、**漏洞掃描探測**、**可疑 User-Agent** |
+| 4. imgdrop 應用層 | 上傳／刪除次數、目前用量、記憶體 |
+| 5. 系統負載與流量 | 負載、記憶體、磁碟、網卡累計流量 |
+| 6. 其他紀錄 | SSH 暴力嘗試、Docker 容器、最近系統錯誤 |
+
+> ⚠️ **一層之隔的差別**：如果掃描被**阿里雲安全組**擋掉，封包根本到不了伺服器，
+> 所以 `ufw.log` 不會有紀錄（這是好事——攻擊者連你的機器存在都摸不到）。
+> 只有「到達伺服器才被 ufw 擋掉」的流量才會出現在報告第 2 節。
+
+想看得更細可以另外裝：
+
+```bash
+# 即時網頁版日誌分析（goaccess）
+sudo apt install -y goaccess
+sudo goaccess /var/log/nginx/access.log --log-format=COMBINED -c
+
+# 長期流量統計（vnstat）
+sudo apt install -y vnstat && sudo systemctl enable --now vnstat
+vnstat -d
+```
+
+阿里雲控制台也有免費的視覺化工具，不需要在伺服器上做任何事：
+
+- **雲監控（CloudMonitor）**：執行個體的公網流量、CPU、記憶體曲線
+- **雲安全中心（Security Center）**：基礎版免費，會列出暴力破解嘗試與漏洞
+
+---
+
 ## 疑難排解
 
 **手機連不上**
