@@ -422,6 +422,74 @@ async function main() {
     await test('伺服器日誌沒有出現明文刪除碼', async () => {
       assert.ok(!serverLog.includes(photo.deleteCode), '日誌不應出現刪除碼');
     });
+
+    // ---------- 啟動健壯性 ----------
+    // 回歸測試：曾經有個 bug —— data 目錄不存在時，secret.key 會在 mkdir 之前
+    // 就嘗試寫入而 ENOENT 崩潰。原本的測試用 mkdtemp 預先建好目錄，所以沒抓到。
+    await test('DATA_DIR 不存在（含多層父目錄）時仍能啟動並自動建立', async () => {
+      const nested = path.join(dataDir, 'a', 'b', 'c', 'not-yet-created');
+      const p2 = freePort();
+      const child2 = spawn(
+        process.execPath,
+        ['--disable-warning=ExperimentalWarning', path.join(ROOT, 'server.js')],
+        {
+          cwd: ROOT,
+          env: {
+            ...process.env,
+            PORT: String(p2),
+            HOST: '127.0.0.1',
+            DATA_DIR: nested,
+            UPLOAD_CODE,
+            ADMIN_KEY,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+      let log2 = '';
+      let exited = false;
+      child2.stdout.on('data', (d) => (log2 += d.toString()));
+      child2.stderr.on('data', (d) => (log2 += d.toString()));
+      child2.on('exit', () => (exited = true));
+
+      try {
+        const deadline = Date.now() + 12000;
+        let ready = false;
+        while (Date.now() < deadline && !ready) {
+          if (exited) break;
+          try {
+            const r = await fetch(`http://127.0.0.1:${p2}/api/health`);
+            if (r.ok) ready = true;
+          } catch {
+            /* 還沒起來 */
+          }
+          if (!ready) await new Promise((r) => setTimeout(r, 150));
+        }
+        assert.ok(!exited, `伺服器不該崩潰。日誌：\n${log2}`);
+        assert.ok(ready, `伺服器沒有在時限內啟動。日誌：\n${log2}`);
+
+        for (const sub of ['secret.key', 'imgdrop.db', 'files', 'thumbs', 'tmp']) {
+          const exists = await fsp
+            .stat(path.join(nested, sub))
+            .then(() => true)
+            .catch(() => false);
+          assert.ok(exists, `應該自動建立 ${sub}`);
+        }
+
+        // 而且真的能上傳
+        const up = await fetch(`http://127.0.0.1:${p2}/api/upload`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'image/png',
+            'X-Upload-Code': UPLOAD_CODE,
+            'X-Device-Token': device,
+          },
+          body: PNG,
+        });
+        assert.strictEqual(up.status, 201, await up.text());
+      } finally {
+        child2.kill('SIGKILL');
+      }
+    });
   } finally {
     child.kill('SIGTERM');
     await new Promise((r) => setTimeout(r, 400));

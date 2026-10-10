@@ -488,7 +488,11 @@ imgdrop/
 sudo journalctl -u imgdrop -n 80 --no-pager
 node -v          # 必須 22.13+ 或 24.x
 ```
-最常見原因是 Node 版本太舊（Ubuntu 內建 18 沒有 `node:sqlite`）。
+三個最常見原因：
+1. Node 版本太舊（Ubuntu 內建 18 沒有 `node:sqlite`）。
+2. **Node 是 nvm 裝的** → systemd 不載入 nvm，且單元有 `ProtectHome=true` 會遮蔽 `/root`。
+   請用 NodeSource 裝系統版到 `/usr/bin/node`（`deploy/install.sh` 會自動處理）。
+3. `DATA_DIR` 沒有權限寫入（服務跑在 `imgdrop` 使用者，目錄需 `chown imgdrop:imgdrop`）。
 
 **「伺服器儲存空間已滿」**
 → 到了 `MAX_TOTAL_BYTES` 配額。等過期自動清理，或手動跑 `/api/admin/cleanup`，或把 `MAX_TOTAL_BYTES` 調大。順便看一下 `df -h`。

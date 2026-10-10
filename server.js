@@ -155,6 +155,12 @@ function randomId(length = ID_LENGTH) {
   return out;
 }
 
+// ---- 資料目錄：必須在任何讀寫之前建立好 ----
+// （沒有這段的話，DATA_DIR 不存在時 secret.key 會寫入失敗並以 ENOENT 崩潰）
+for (const dir of [DATA_DIR, FILES_DIR, THUMBS_DIR, TMP_DIR]) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
+}
+
 // ---- 伺服器密鑰（用於雜湊刪除碼／裝置權杖，避免資料庫外洩即可反推）----
 function loadOrCreateSecret() {
   if (process.env.HASH_SECRET && process.env.HASH_SECRET.length >= 16) {
@@ -167,6 +173,7 @@ function loadOrCreateSecret() {
     /* 檔案不存在，繼續建立 */
   }
   const secret = crypto.randomBytes(32).toString('hex');
+  fs.mkdirSync(path.dirname(SECRET_FILE), { recursive: true, mode: 0o750 });
   fs.writeFileSync(SECRET_FILE, secret + '\n', { mode: 0o600 });
   return secret;
 }
@@ -196,10 +203,6 @@ try {
       '          安裝方式：curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash - && sudo apt install -y nodejs\n'
   );
   process.exit(1);
-}
-
-for (const dir of [DATA_DIR, FILES_DIR, THUMBS_DIR, TMP_DIR]) {
-  fs.mkdirSync(dir, { recursive: true, mode: 0o750 });
 }
 
 const db = new DatabaseSync(DB_FILE);
