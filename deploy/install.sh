@@ -36,29 +36,51 @@ SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$SRC_DIR/server.js" ]] || die "在 $SRC_DIR 找不到 server.js，請在 imgdrop 目錄內執行此腳本"
 
 # ---------------------------------------------------------------- Node.js
-node_ok() {
-  command -v node >/dev/null 2>&1 || return 1
-  local v major minor
-  v="$(node -p 'process.versions.node' 2>/dev/null || echo 0)" || return 1
+# 重要：systemd 服務不會載入 nvm，而且本單元有 ProtectHome=true 會遮蔽 /root。
+# 所以「nvm 裝的 node」對本服務不可用，必須是系統路徑（/usr/bin 等）的 node。
+node_version_ok() {
+  local bin="$1" v major minor
+  [ -x "$bin" ] || return 1
+  v="$("$bin" -p 'process.versions.node' 2>/dev/null)" || return 1
   major="${v%%.*}"
   minor="$(printf '%s' "$v" | cut -d. -f2)"
   [[ "$major" =~ ^[0-9]+$ ]] || return 1
   (( major > NODE_MIN_MAJOR || (major == NODE_MIN_MAJOR && minor >= NODE_MIN_MINOR) ))
 }
 
-log "檢查 Node.js"
-if node_ok; then
-  ok "已有 Node.js $(node -v)"
-else
-  warn "找不到夠新的 Node.js（需要 ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}+，Ubuntu 內建只有 18）"
-  warn "將透過 NodeSource 安裝 Node.js ${NODE_SETUP}.x LTS"
+# 判斷路徑是否為 systemd 能安全存取的系統位置（排除 nvm / 家目錄）
+node_is_system_path() {
+  case "$1" in
+    /usr/bin/node|/usr/local/bin/node|/usr/bin/nodejs|/opt/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_system_node() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq ca-certificates curl gnupg >/dev/null
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_SETUP}.x" | bash - >/dev/null
   apt-get install -y -qq nodejs >/dev/null
-  node_ok || die "Node.js 安裝失敗，請手動安裝 22.13+ 後再執行本腳本"
-  ok "已安裝 Node.js $(node -v)"
+}
+
+log "檢查 Node.js"
+NODE_BIN="$(command -v node 2>/dev/null || true)"
+
+if [ -n "$NODE_BIN" ] && node_version_ok "$NODE_BIN" && node_is_system_path "$NODE_BIN"; then
+  ok "已有系統版 Node.js $("$NODE_BIN" -v)：$NODE_BIN"
+else
+  if [ -n "$NODE_BIN" ] && node_version_ok "$NODE_BIN"; then
+    warn "找到的 Node.js 在非系統路徑：$NODE_BIN"
+    warn "nvm／家目錄的 Node 無法被 systemd 服務使用（且 /root 會被 ProtectHome 遮蔽）"
+  else
+    warn "找不到夠新的 Node.js（需要 ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}+，Ubuntu 內建只有 18）"
+  fi
+  warn "→ 將另外安裝系統版 Node.js ${NODE_SETUP}.x（不影響你原有的 nvm）"
+  install_system_node
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+  node_version_ok "$NODE_BIN" || die "系統版 Node.js 安裝失敗，請手動安裝 22.13+ 後再執行本腳本"
+  ok "已安裝系統版 Node.js $("$NODE_BIN" -v)：$NODE_BIN"
 fi
 
 # ---------------------------------------------------------------- 使用者 / 目錄
@@ -126,7 +148,13 @@ fi
 
 # ---------------------------------------------------------------- systemd
 log "安裝 systemd 服務"
-install -m 644 "$APP_DIR/deploy/imgdrop.service" "/etc/systemd/system/${SVC_NAME}.service"
+# 把 ExecStart 換成實際解析到的 node 絕對路徑，避免 systemd 找不到 nvm 的 node
+UNIT_TMP="$(mktemp)"
+sed "s|^ExecStart=.*|ExecStart=${NODE_BIN} --disable-warning=ExperimentalWarning ${APP_DIR}/server.js|" \
+  "$APP_DIR/deploy/imgdrop.service" > "$UNIT_TMP"
+install -m 644 "$UNIT_TMP" "/etc/systemd/system/${SVC_NAME}.service"
+rm -f "$UNIT_TMP"
+ok "服務將使用：${NODE_BIN}"
 systemctl daemon-reload
 systemctl enable "$SVC_NAME" >/dev/null 2>&1 || true
 systemctl restart "$SVC_NAME"

@@ -138,11 +138,17 @@ npm run smoke
 <details>
 <summary>展開看完整指令</summary>
 
+> ⚠️ **如果你用 nvm 裝 Node**：`systemd` 服務**不會**載入 nvm，而且本單元的
+> `ProtectHome=true` 會遮蔽 `/root`。所以 nvm 的 Node 對這個服務不可用。
+> `deploy/install.sh` 已自動處理（會另外裝一份系統版 Node，不動你的 nvm）；
+> 手動安裝的話請務必用 NodeSource 裝到 `/usr/bin/node`，並確認 unit 的 `ExecStart` 指向它。
+
 ```bash
 # 1) 安裝 Node.js 24 LTS（Ubuntu 內建只有 Node 18，太舊）
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node -v   # 應該是 v24.x
+which node   # 必須是 /usr/bin/node；若是 /root/.nvm/... 就得改
 
 # 2) 建立使用者與目錄
 sudo useradd --system --home-dir /opt/imgdrop --shell /usr/sbin/nologin imgdrop
